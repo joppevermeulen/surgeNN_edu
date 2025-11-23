@@ -214,11 +214,16 @@ if __name__ == "__main__":
     
     #configure standard settings if running main:
     
+    pathloc = os.getcwd()
+
     #i/o
-    predictor_path  = '/home/jovyan/surgeNN/input/era5_predictors/3hourly/' #'gs://leap-persistent/timh37/HighResMIP/surgeNN_predictors/'#
+    # predictor_path  = '/home/jovyan/surgeNN/input/era5_predictors/3hourly/' #'gs://leap-persistent/timh37/HighResMIP/surgeNN_predictors/'#
+    predictor_path = pathloc + "\\surgeNN_edu\\input\\era5_predictors\\3hourly"
     #predictand_path = '/home/jovyan/surgeNN/input/CoDEC_ERA5_at_gesla3_tgs_eu_hourly_anoms.nc'#'/home/jovyan/surgeNN/input/GTSM_HighResMIP_HadGEM3-GC31-HM_at_gesla3_tgs_stretched_3hourly_rounded10min_after2.nc'
-    predictand_path = '/home/jovyan/surgeNN/input/t_tide_3h_hourly_deseasoned_predictands'
-    output_dir = '/home/jovyan/surgeNN/results/nns/'
+    # predictand_path = '/home/jovyan/surgeNN/input/t_tide_3h_hourly_deseasoned_predictands'
+    predictand_path = pathloc + "\\surgeNN_edu\\input\\t_tide_3h_hourly_deseasoned_predictands"
+    # output_dir = '/home/jovyan/surgeNN/results/nns/'
+    output_dir = '/SurgeNN/results'
     store_model = 0#1 #whether to store the tensorflow models
     temp_freq = 3 # [hours] temporal frequency to use
     
