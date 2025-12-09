@@ -1,4 +1,21 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+from tensorflow.python.client import device_lib
+
 import tensorflow as tf
+
+gpus = tf.config.list_physical_devices("GPU")
+if gpus:
+    try:
+        tf.config.set_visible_devices(gpus[0], "GPU")
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+        print("Using GPU:", gpus[0])
+    except Exception as e:
+        print("GPU setup failed:", e)
+else:
+    print("⚠ No GPU detected, running on CPU")
+
 import xarray as xr
 import fnmatch
 import numpy as np
@@ -15,10 +32,18 @@ import itertools
 import random
 
 import gc #callback to clean up garbage after each epoch, not sure if strictly necessary (usage: callbacks = [GC_Callback()])
+class HeartbeatCallback(tf.keras.callbacks.Callback):
+    def on_epoch_begin(self, epoch, logs=None):
+        print(f"⚡ Epoch {epoch} starting…", flush=True)
+
+# class GC_Callback(tf.keras.callbacks.Callback):
+#     def on_epoch_end(self, epoch, logs=None):
+#         gc.collect()
+        
 class GC_Callback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
-        gc.collect()
-        
+        tf.keras.backend.clear_session()
+
 def train_and_predict(model_architecture,loss_function,hyperparam_options,
                       split_fractions,strat_metric,strat_start_month,strat_seed,tgs,n_runs,n_iterations,n_epochs,patience,
                       predictor_path,predictor_vars,predictor_degrees,predictand_path,temp_freq,output_dir,store_model):
@@ -63,6 +88,7 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
     for tg in tqdm(tgs): #loop over TGs:
         
         ### (1) Load & prepare input data
+        print("Load input data")
         n_cells = int(predictor_degrees * (4/1)) #determine how many grid cells around TG to use (era5 resolution = 0.25 degree)
         
         predictors = io.Predictor(predictor_path)
@@ -78,6 +104,7 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
         predictand.resample_fillna(str(temp_freq)+'h')
         
         ### (2) Configure sets of hyperparameters to run with
+        print("Start sets of hyperparameters")
         all_settings = list(itertools.product(*hyperparam_options))
         n_settings = len(all_settings)
 
@@ -87,6 +114,8 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
             selected_settings = all_settings
         
         ### (3) Execute training & evaluation (n_iterations * n_runs times):
+        print("Start training")
+        # print(tf.config.list_physical_devices('GPU'))
         for it in np.arange(n_iterations): #for each iteration
             tg_datasets = [] #list to store output
             
@@ -95,6 +124,7 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
                 this_batch_size,this_n_steps,this_n_convlstm,this_n_convlstm_units,this_n_dense,this_n_dense_units,this_dropout,this_lr,this_l2,this_dl_alpha = these_settings #pick hyperparameters for this run
  
                 #generate train, validation and test splits & prepare input for model
+                print("Generating train, validation and test splits & prepare input for model")
                 model_input = preprocessing.trainingInput(predictors,predictand)
                 if model_architecture == 'lstm':
                     model_input.stack_predictor_coords()
@@ -113,6 +143,7 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
                 o_train,o_val,o_test = [model_input.y_train_sd * k + model_input.y_train_mean for k in [y_train,y_val,y_test]] #back-transform observations
 
                 #build model
+                print("Building model")
                 if model_architecture == 'convlstm':
                     model = build_ConvLSTM2D_with_channels(this_n_convlstm, this_n_dense,(np.ones(this_n_convlstm)*this_n_convlstm_units).astype(int), 
                                               (np.ones(this_n_dense)*this_n_dense_units).astype(int),this_n_steps,
@@ -123,19 +154,27 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
                                                             len(predictors.data.lon_around_tg)**2 * len(predictor_vars)),1,'lstm0',this_dropout, this_lr, lf,l2=this_l2)
 
                 #train model:
+                print("Training")
+                print(tf.config.list_physical_devices('GPU'))
                 if this_dl_alpha: #if using DenseLoss weights
                     train_history = model.fit(x=x_train,y=y_train,epochs=n_epochs,batch_size=this_batch_size,sample_weight=w_train,validation_data=(x_val,y_val,w_val),
-                                              callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience,restore_best_weights=True),GC_Callback()],verbose=2) #with numpy arrays input
+                                            #   callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience,restore_best_weights=True),GC_Callback()],verbose=2) #with numpy arrays input
+                                            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True),
+                                                        GC_Callback(), HeartbeatCallback()],verbose=2)
                 else: #else
                     train_history = model.fit(x=x_train,y=y_train,epochs=n_epochs,batch_size=this_batch_size,validation_data=(x_val,y_val),
-                                              callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience,restore_best_weights=True),GC_Callback()],verbose=2) #with numpy arrays input
+                                            #   callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience,restore_best_weights=True),GC_Callback()],verbose=2) #with numpy arrays input
+                                            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True),
+                                                        GC_Callback(), HeartbeatCallback()],verbose=2)
 
                 #make predictions & back-transform
+                print("Make predictions & back-transform")
                 yhat_train = model.predict(x_train,verbose=0)*model_input.y_train_sd + model_input.y_train_mean#.flatten()*y_train_sd + y_train_mean
                 yhat_val = model.predict(x_val,verbose=0)*model_input.y_train_sd + model_input.y_train_mean#.flatten()*y_train_sd + y_train_mean
                 yhat_test = model.predict(x_test,verbose=0)*model_input.y_train_sd + model_input.y_train_mean#.flatten()*y_train_sd + y_train_mean
                 
                 #store results into xr dataset for current settings and iteration
+                print("Store results into xr dataset for current settings and iteration")
                 ds_train = train_predict_output_to_ds(o_train,yhat_train,model_input.t_train,these_settings,np.array([tg]),model_architecture,lf_name)
                 ds_val = train_predict_output_to_ds(o_val,yhat_val,model_input.t_val,these_settings,np.array([tg]),model_architecture,lf_name)
                 ds_test = train_predict_output_to_ds(o_test,yhat_test,model_input.t_test,these_settings,np.array([tg]),model_architecture,lf_name)
@@ -155,7 +194,7 @@ def train_and_predict(model_architecture,loss_function,hyperparam_options,
                 
                 del model, model_input, train_history, ds_i #, x_train, x_val, x_test
                 tf.keras.backend.clear_session()
-                gc.collect()
+                # gc.collect()
 
             #concatenate across runs & compute statistics
             out_ds = xr.concat(tg_datasets,dim='i',coords='different')
@@ -191,7 +230,7 @@ if __name__ == "__main__":
                   'brest-822a-fra-uhslc.csv', 'vigo-vigo-esp-ieo.csv',  'alicante_i_outer_harbour-alio-esp-da_mm.csv'] #all tide gauges to process
     '''
     # --- allow to set specific function arguments using commandline in "execute_train_and_predit.sh"
-    default_tgs = ['den_helder-denhdr-nld-rws.csv'] #set default values
+    default_tgs = ['esbjerg-esb-dnk-dmi.csv'] #set default values
     default_architecture = 'lstm'
     default_alpha = np.array([0,1,3,5]).astype('int')
     default_n_degrees = 5
@@ -210,6 +249,9 @@ if __name__ == "__main__":
     
     print('Training & predicting for tide gauges: '+str(tgs))
     print('Architecture: '+model_architecture+'; dl_alpha: ' + str(dl_alpha))
+
+    # tf.debugging.set_log_device_placement(True) # Check if running on GPU
+    
     # --- 
     
     #configure standard settings if running main:
@@ -218,13 +260,13 @@ if __name__ == "__main__":
 
     #i/o
     # predictor_path  = '/home/jovyan/surgeNN/input/era5_predictors/3hourly/' #'gs://leap-persistent/timh37/HighResMIP/surgeNN_predictors/'#
-    predictor_path = pathloc + "\\surgeNN_edu\\input\\era5_predictors\\3hourly"
+    predictor_path = pathloc + "\\input\\era5_predictors\\3hourly"
     #predictand_path = '/home/jovyan/surgeNN/input/CoDEC_ERA5_at_gesla3_tgs_eu_hourly_anoms.nc'#'/home/jovyan/surgeNN/input/GTSM_HighResMIP_HadGEM3-GC31-HM_at_gesla3_tgs_stretched_3hourly_rounded10min_after2.nc'
     # predictand_path = '/home/jovyan/surgeNN/input/t_tide_3h_hourly_deseasoned_predictands'
-    predictand_path = pathloc + "\\surgeNN_edu\\input\\t_tide_3h_hourly_deseasoned_predictands"
+    predictand_path = pathloc + "\\input\\t_tide_3h_hourly_deseasoned_predictands"
     # output_dir = '/home/jovyan/surgeNN/results/nns/'
-    output_dir = '/SurgeNN/results'
-    store_model = 0#1 #whether to store the tensorflow models
+    output_dir = pathloc + '\\surgeNN\\results'
+    store_model = 1 #whether to store the tensorflow models
     temp_freq = 3 # [hours] temporal frequency to use
     
     #training
@@ -242,7 +284,7 @@ if __name__ == "__main__":
     strat_seed = 0
 
     #hyperparameters:
-    #dl_alpha = np.array([0,1,3,5]).astype('int') #defined from command line
+    # dl_alpha = np.array([0,1,3,5]).astype('int') #defined from command line
    
     batch_size = np.array([128]).astype('int')
     n_steps = np.array([5]).astype('int')

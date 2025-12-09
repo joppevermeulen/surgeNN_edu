@@ -52,13 +52,16 @@ class trainingInput():
     
         if split=='train':
             self.t_train = self.t_train[np.isfinite(self.y_train)]
-            return generate_windowed_filtered_np_input(self.x_train['stacked'].load(),self.y_train,n_steps,self.w_train)
+            #return generate_windowed_filtered_np_input(self.x_train['stacked'].load(),self.y_train,n_steps,self.w_train)
+            return generate_windowed_filtered_np_input(self.x_train['stacked'],self.y_train,n_steps,self.w_train)
         elif split=='val':
             self.t_val = self.t_val[np.isfinite(self.y_val)]
-            return generate_windowed_filtered_np_input(self.x_val['stacked'].load(),self.y_val,n_steps,self.w_val)
+            #return generate_windowed_filtered_np_input(self.x_val['stacked'].load(),self.y_val,n_steps,self.w_val)
+            return generate_windowed_filtered_np_input(self.x_val['stacked'],self.y_val,n_steps,self.w_val)
         elif split=='test':
             self.t_test = self.t_test[np.isfinite(self.y_test)]
-            return generate_windowed_filtered_np_input(self.x_test['stacked'].load(),self.y_test,n_steps,self.w_test)
+            #return generate_windowed_filtered_np_input(self.x_test['stacked'].load(),self.y_test,n_steps,self.w_test)
+            return generate_windowed_filtered_np_input(self.x_test['stacked'],self.y_test,n_steps,self.w_test)
         else:
             raise Exception('Split: '+str(split)+' does not exist.')
 

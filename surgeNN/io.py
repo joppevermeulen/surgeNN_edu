@@ -49,7 +49,10 @@ class Predictor():
         
     def open_dataset(self,tg,predictor_vars,n_cells): #open predictor dataset
         self.data = open_predictors(self.path,tg,n_cells)[predictor_vars]
-      
+    
+    def load_data(self):
+        self.data = self.data.load()
+        
     def subtract_annual_means(self): #subtract annual means at each timestep
         for var in list(self.data.keys()): #for each data variable
             self.data[var] = self.data[var].groupby(self.data.time.dt.year) -self.data[var].groupby(self.data.time.dt.year).mean('time') #remove annual means
@@ -101,8 +104,12 @@ def open_predictors(path,tg,n_cells):
         print('Warning - "n_cells" is larger than the the available number of grid cells. Using the available number instead.')
               
     n_cells = np.min([n_cells,max_n_cells])
-
-    predictors = predictors.isel(lon_around_tg = np.arange(0+int((max_n_cells-n_cells)/2),max_n_cells-int((max_n_cells-n_cells)/2)),
+    
+    if n_cells==1:
+        predictors = predictors.isel(lon_around_tg = int((max_n_cells/2)-1),
+                         lat_around_tg = int((max_n_cells/2)-1)) #take the middle-left cell
+    else:   
+        predictors = predictors.isel(lon_around_tg = np.arange(0+int((max_n_cells-n_cells)/2),max_n_cells-int((max_n_cells-n_cells)/2)),
                          lat_around_tg = np.arange(0+int((max_n_cells-n_cells)/2),max_n_cells-int((max_n_cells-n_cells)/2)))
 
     if 'w' not in predictors.variables:
