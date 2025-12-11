@@ -106,8 +106,8 @@ def open_predictors(path,tg,n_cells):
     n_cells = np.min([n_cells,max_n_cells])
     
     if n_cells==1:
-        predictors = predictors.isel(lon_around_tg = int((max_n_cells/2)-1),
-                         lat_around_tg = int((max_n_cells/2)-1)) #take the middle-left cell
+        predictors = predictors.isel(lon_around_tg = [int((max_n_cells/2)-1)],
+                         lat_around_tg = [int((max_n_cells/2)-1)]) #take the middle-left cell
     else:   
         predictors = predictors.isel(lon_around_tg = np.arange(0+int((max_n_cells-n_cells)/2),max_n_cells-int((max_n_cells-n_cells)/2)),
                          lat_around_tg = np.arange(0+int((max_n_cells-n_cells)/2),max_n_cells-int((max_n_cells-n_cells)/2)))
